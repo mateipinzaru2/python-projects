@@ -133,7 +133,7 @@ print(f"API endpoint defined: {api_endpoint}")
 
 
 # Initialize the CSV file
-csv_file = open("active_users.csv", "w")
+csv_file = open("multithreaded_output.csv", "w")
 csv_writer = csv.writer(csv_file)
 print("CSV file initialized.")
 
