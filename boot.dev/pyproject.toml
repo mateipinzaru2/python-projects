@@ -8,6 +8,7 @@ packages = [{include = "boot"}]
 
 [tool.poetry.dependencies]
 python = "^3.12"
+sympy = "^1.12"
 
 
 [build-system]
