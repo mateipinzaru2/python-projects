@@ -1,14 +1,14 @@
 [tool.poetry]
-name = "azure-get-user-group-membership-and-last-signin"
+name = "msgraph-client"
 version = "0.1.0"
 description = ""
-authors = ["Your Name <you@example.com>"]
+authors = ["Matei Pinzaru <matei@avocado.solutions>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.12"
+python-decouple = "^3.8"
 msgraph-sdk = "^1.0.0"
-requests = "^2.31.0"
 
 
 [build-system]

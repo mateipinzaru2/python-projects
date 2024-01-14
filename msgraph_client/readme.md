@@ -19,10 +19,13 @@ There are 3 versions of the program:
   - `User.Read.All` permission
   - `Group.Read.All` permission
   - `AuditLog.Read.All` permission
-- 3 ENV variables:
-  - `AZURE_CLIENT_ID`
-  - `AZURE_CLIENT_SECRET`
-  - `AZURE_TENANT_ID`
+
+- Create a file called `credentials.env` in the project root directory with the following information:
+  ```conf
+  TENANT_ID=your_tenant_id
+  CLIENT_ID=your_client_id
+  CLIENT_SECRET=your_client_secret
+  ```
 
 ## Setup
 - `brew install poetry`

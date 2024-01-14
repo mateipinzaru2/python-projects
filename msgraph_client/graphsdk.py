@@ -1,6 +1,9 @@
 import os
+import datetime
 import asyncio
 import csv
+
+from decouple import Config
 
 from azure.identity import ClientSecretCredential
 from msgraph import GraphServiceClient
@@ -11,17 +14,18 @@ from msgraph.generated.reports.authentication_methods.user_registration_details.
 from kiota_abstractions.api_error import APIError
 
 
-# Azure AD app registration details
-tenant_id = os.getenv("TENANT_ID")
-client_id = os.getenv("CLIENT_ID")
-client_secret = os.getenv("CLIENT_SECRET")
-# Check that all environment variables are set
+config = Config(".env")
+
+tenant_id = config("TENANT_ID")
+client_id = config("CLIENT_ID")
+client_secret = config("CLIENT_SECRET")
+
 if tenant_id is None:
-    raise Exception("Please set the TENANT_ID environment variable")
+    raise Exception("Please set the TENANT_ID variable")
 if client_id is None:
-    raise Exception("Please set the CLIENT_ID environment variable")
+    raise Exception("Please set the CLIENT_ID variable")
 if client_secret is None:
-    raise Exception("Please set the CLIENT_SECRET environment variable")
+    raise Exception("Please set the CLIENT_SECRET variable")
 
 
 credential = ClientSecretCredential(tenant_id, client_id, client_secret)
@@ -34,6 +38,7 @@ client = GraphServiceClient(
 
 user_query_params = UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
     filter="accountEnabled eq true",
+    select=["userPrincipalName", "id", "signInActivity"],
     expand=["memberOf"],
     top=999,
 )
@@ -49,6 +54,12 @@ mfa_query_params = UserRegistrationDetailsRequestBuilder.UserRegistrationDetails
 mfa_request_config = UserRegistrationDetailsRequestBuilder.UserRegistrationDetailsRequestBuilderGetRequestConfiguration(
     query_parameters=mfa_query_params
 )
+
+
+os.makedirs("output", exist_ok=True)
+now = datetime.datetime.now()
+now_str = now.strftime("%Y-%m-%d_%H-%M-%S")
+filename = f"output/graphsdk_output_{now_str}.csv"
 
 
 async def get_user_pages():
@@ -103,7 +114,7 @@ async def process_users():
                 for mfa in mfas.value:
                     mfa_dict[mfa.id] = "Yes" if mfa.is_mfa_registered else "No"
     if users_pages:
-        with open("graphsdk_output.csv", "w", newline="") as file:
+        with open(filename, "w", newline="") as file:
             writer = csv.writer(file)
             writer.writerow(["User", "MFA Registered", "Sign in date", "Groups"])
             for users in users_pages:
