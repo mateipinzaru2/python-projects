@@ -3,7 +3,7 @@ import datetime
 import asyncio
 import csv
 
-from decouple import Config
+from decouple import config
 
 from azure.identity import ClientSecretCredential
 from msgraph import GraphServiceClient
@@ -13,8 +13,6 @@ from msgraph.generated.reports.authentication_methods.user_registration_details.
 )
 from kiota_abstractions.api_error import APIError
 
-
-config = Config(".env")
 
 tenant_id = config("TENANT_ID")
 client_id = config("CLIENT_ID")
@@ -39,7 +37,7 @@ client = GraphServiceClient(
 user_query_params = UsersRequestBuilder.UsersRequestBuilderGetQueryParameters(
     filter="accountEnabled eq true",
     select=["userPrincipalName", "id", "signInActivity"],
-    expand=["memberOf"],
+    expand=["transitiveMemberOf"],
     top=999,
 )
 user_request_config = UsersRequestBuilder.UsersRequestBuilderGetRequestConfiguration(
@@ -105,7 +103,6 @@ async def get_mfa_pages():
 
 
 async def process_users():
-    users_pages = await get_user_pages()
     mfa_pages = await get_mfa_pages()
     mfa_dict = {}
     if mfa_pages:
@@ -113,20 +110,37 @@ async def process_users():
             if mfas and mfas.value:
                 for mfa in mfas.value:
                     mfa_dict[mfa.id] = "Yes" if mfa.is_mfa_registered else "No"
+
+    users_pages = await get_user_pages()
     if users_pages:
         with open(filename, "w", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(["User", "MFA Registered", "Sign in date", "Groups"])
+            writer.writerow(
+                [
+                    "User Principal Name",
+                    "MFA Registered",
+                    "Last sign-in date and time",
+                    "Entra Role Assignments",
+                    "Entra Group Assignments",
+                ]
+            )
             for users in users_pages:
                 if users and users.value:
                     for user in users.value:
-                        groups = (
-                            ", ".join(
-                                group.display_name for group in user.member_of or []
-                            )
-                            if user.member_of
-                            else "N/A"
-                        )
+                        groups = []
+                        roles = []
+                        if user.transitive_member_of:
+                            for directory_object in user.transitive_member_of:
+                                if (
+                                    directory_object.odata_type
+                                    == "#microsoft.graph.group"
+                                ):
+                                    groups.append(directory_object.display_name)
+                                elif (
+                                    directory_object.odata_type
+                                    == "#microsoft.graph.directoryRole"
+                                ):
+                                    roles.append(directory_object.display_name)
                         sign_in_date = (
                             user.sign_in_activity.last_sign_in_date_time
                             if user.sign_in_activity
@@ -138,7 +152,8 @@ async def process_users():
                                 user.user_principal_name,
                                 mfa_registered,
                                 sign_in_date,
-                                groups,
+                                ", ".join(roles) if roles else "N/A",
+                                ", ".join(groups) if groups else "N/A",
                             ]
                         )
 

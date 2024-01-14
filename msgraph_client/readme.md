@@ -1,7 +1,14 @@
 # Azure Graph API Client
-This is a Python client for the `Microsoft Graph API`. It fetches all users from the API and for each user, it fetches the last sign-in activity and group membership. It then stores the data in a CSV file. 
+This is a Python client for the `Microsoft Graph API`. 
 
-*The `graphsdk.py` variant also fetches the MFA registration status for each user.* 
+It gets **all Entra `enabled` users** and for each user, it fetches the:
+
+  - **Last sign-in activity**
+  - **MFA Registration Status**
+  - **Group Membership**
+  - **Entra Role Assignments** 
+
+It then stores the data in a CSV file. 
 
 There are 3 versions of the program:
 
@@ -20,7 +27,7 @@ There are 3 versions of the program:
   - `Group.Read.All` permission
   - `AuditLog.Read.All` permission
 
-- Create a file called `credentials.env` in the project root directory with the following information:
+- Create a file called `.env` in the project root directory with the following information:
   ```conf
   TENANT_ID=your_tenant_id
   CLIENT_ID=your_client_id
@@ -38,7 +45,7 @@ There are 3 versions of the program:
 ## `singlethreaded.py` and `multithreaded.py` Performance
 The issue of these 2 variants is that they're treating the API server as if it weren't a Graph API server, but a regular REST API server.
 
-The main loop of the program fetches users in batches of ***999*** from the API and processes each user individually. For each user, it makes two additional API calls: one to fetch the last sign-in activity and another to fetch the group membership. Therefore, if `n` is the ***number of users***, the `time complexity` would be `O(n/999 + 2n)`, which simplifies to `O(2n)` *if `n` is small*.
+The main loop of the program fetches users in batches of ***999*** from the API and processes each user individually. For each user, it makes two additional API calls: one to fetch the **Last sign-in activity** and another to fetch the **Group Membership**. Therefore, if `n` is the ***number of users***, the `time complexity` would be `O(n/999 + 2n)`, which simplifies to `O(2n)` *if `n` is small*.
 
 Due to the API rate limit, there isn't much of a difference between the single-threaded and multithreaded versions of the program. The multithreaded version is only slightly faster because it can make more requests in parallel, but it still has to wait for the API to respond.
 
@@ -49,7 +56,7 @@ For ***3005*** users **->** ***6h 11m 46s*** execution time.
 For ***3005*** users **->** ***N/A*** execution time.
 
 ## `graphsdk.py` Performance
-Instead of making `2n` API calls for each user to get the group membership and last sign in date, the program's performance is ***massively improved*** by using the [Python Microsoft Graph SDK](https://github.com/microsoftgraph/msgraph-sdk-python) to fetch batches of ***999*** users in a single API call, and expanding the response to include the group membership and last sign-in date, in one go. This is possible via [query parameters](https://learn.microsoft.com/en-us/graph/query-parameters?tabs=http#expand-parameter). The time complexity of this variant is `O(n/999)`, which simplifies to `O(1)` *if `n` is small*.
+Instead of making `2n` API calls for each user to get the **Group Membership** and **Last sign-in Date**, the program's performance is ***massively improved*** by using the [Python Microsoft Graph SDK](https://github.com/microsoftgraph/msgraph-sdk-python) to fetch batches of ***999*** users in a single API call, and expanding the response to include not only the **Group Membership** and **Last sign-in Date**, but also the **MFA Registration Status** and **Entra Role Assignments**, in one go. This is possible via [query parameters](https://learn.microsoft.com/en-us/graph/query-parameters?tabs=http#expand-parameter). The time complexity of this variant is `O(n/999)`, which simplifies to `O(1)` *if `n` is small*.
 
 ### Graph SDK Stats
-For ***3015*** users **->** ***58s*** execution time.
+For ***3015*** users **->** ***1m 10s*** execution time.
