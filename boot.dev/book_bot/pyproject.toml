@@ -1,14 +1,12 @@
 [tool.poetry]
-name = "boot-dev"
+name = "book-bot"
 version = "0.1.0"
 description = ""
-authors = ["Your Name <you@example.com>"]
+authors = ["Matei Pinzaru <matei@avocado.solutions>"]
 readme = "README.md"
-packages = [{include = "boot"}]
 
 [tool.poetry.dependencies]
 python = "^3.12"
-sympy = "^1.12"
 
 
 [build-system]
