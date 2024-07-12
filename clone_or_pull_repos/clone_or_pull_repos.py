@@ -2,35 +2,47 @@ import asyncio
 import os
 import json
 import logging
+import io
 from asyncio import Semaphore
 from collections import defaultdict
 from tqdm import tqdm
+
 
 # Configuration
 ORG_NAME = os.getenv("GITHUB_ORG", "")
 REPO_PREFIX = os.getenv("REPO_PREFIX", "")
 MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", 20))
 
+
 # Set up logging
+log_stream = io.StringIO()
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    stream=log_stream,
 )
 
 # Global dictionary to store results
 results = defaultdict(list)
 
 
-async def async_tqdm(iterable, total=None, **kwargs):
-    pbar = tqdm(total=total, **kwargs)
-    for item in iterable:
-        yield item
-        pbar.update(1)
-    pbar.close()
-
-
-async def fetch_repos(ORG_NAME: str) -> list[dict]:
+async def run_command(
+    cmd: str, repo_name: str, cwd=None
+) -> tuple[int | None, str, str]:
     process = await asyncio.create_subprocess_shell(
-        f"gh repo list {ORG_NAME} --json name,sshUrl --limit 1000",
+        cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=cwd
+    )
+    stdout, stderr = await process.communicate()
+    if stderr:
+        logging.warning(
+            f"Repository '{repo_name}': Command '{cmd}' produced stderr output: {stderr.decode().strip()}"
+        )
+    return process.returncode, stdout.decode(), stderr.decode()
+
+
+async def get_repos(ORG_NAME: str) -> list[dict]:
+    process = await asyncio.create_subprocess_shell(
+        f"gh repo list {ORG_NAME} --json name --limit 1000",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -41,72 +53,91 @@ async def fetch_repos(ORG_NAME: str) -> list[dict]:
     return json.loads(stdout)
 
 
-async def run_command(cmd: str, cwd=None) -> tuple[int | None, str, str]:
-    process = await asyncio.create_subprocess_shell(
-        cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=cwd
+async def clone_repo(repo_name: str, repo_path: str):
+    returncode, _, stderr = await run_command(
+        f"gh repo clone {ORG_NAME}/{repo_name} {repo_path}", repo_name
     )
-    stdout, stderr = await process.communicate()
-    return process.returncode, stdout.decode(), stderr.decode()
-
-
-async def get_changed_files(repo_path: str) -> list[str]:
-    returncode, stdout, _ = await run_command("git status --porcelain", cwd=repo_path)
     if returncode == 0:
-        return [line.split()[-1] for line in stdout.splitlines() if line.strip()]
-    return []
+        results["cloned"].append(repo_name)
+    else:
+        results["clone_failed"].append((repo_name, stderr.strip()))
 
 
-async def clone_or_sync_repo(repo: dict):
-    repo_name = repo["name"]
-    ssh_url = repo["sshUrl"]
+async def fetch_and_merge(repo_name: str, repo_path: str):
+    returncode, _, stderr = await run_command("git fetch", repo_name, cwd=repo_path)
+    if returncode != 0:
+        return False, stderr.strip()
+
+    returncode, _, stderr = await run_command(
+        "git merge --ff-only @{u}", repo_name, cwd=repo_path
+    )
+    return returncode == 0, stderr.strip()
+
+
+async def get_commit_hash(repo_name: str, repo_path: str):
+    returncode, commit_hash, _ = await run_command(
+        "git rev-parse HEAD", repo_name, cwd=repo_path
+    )
+    return commit_hash.strip() if returncode == 0 else None
+
+
+async def get_changed_files(
+    repo_name: str, repo_path: str, before_commit: str | None, after_commit: str | None
+):
+    returncode, changed_files_output, _ = await run_command(
+        f"git diff --name-only {before_commit} {after_commit}", repo_name, cwd=repo_path
+    )
+    return (
+        changed_files_output.strip().split("\n") if changed_files_output.strip() else []
+    )
+
+
+async def update_repo(repo_name: str, repo_path: str):
+    success, error = await fetch_and_merge(repo_name, repo_path)
+    if not success:
+        results["update_failed"].append((repo_name, error))
+        return
+
+    before_commit = await get_commit_hash(repo_name, repo_path)
+    after_commit = await get_commit_hash(repo_name, repo_path)
+
+    if before_commit != after_commit:
+        changed_files = await get_changed_files(
+            repo_name, repo_path, before_commit, after_commit
+        )
+        if changed_files:
+            results["updated"].append((repo_name, changed_files))
+        else:
+            results["updated_state"].append(repo_name)
+    else:
+        results["up_to_date"].append(repo_name)
+
+
+async def clone_or_sync_repo(repo_name: str):
     repo_path = os.path.join(os.getcwd(), repo_name)
 
     if os.path.exists(repo_path):
-        returncode, _, stderr = await run_command("git fetch --all", cwd=repo_path)
-        if returncode == 0:
-            returncode, before_commit, _ = await run_command(
-                "git rev-parse HEAD", cwd=repo_path
-            )
-            returncode, _, stderr = await run_command(
-                "git merge --ff-only @{u}", cwd=repo_path
-            )
-            returncode, after_commit, _ = await run_command(
-                "git rev-parse HEAD", cwd=repo_path
-            )
-
-            if before_commit.strip() != after_commit.strip():
-                changed_files = await get_changed_files(repo_path)
-                if changed_files:
-                    results["updated"].append((repo_name, changed_files))
-                else:
-                    results["updated_state"].append(repo_name)
-            else:
-                results["up_to_date"].append(repo_name)
-        else:
-            results["update_failed"].append((repo_name, stderr.strip()))
+        await update_repo(repo_name, repo_path)
     else:
-        returncode, _, stderr = await run_command(
-            f"gh repo clone {ssh_url} {repo_path}"
-        )
-        if returncode == 0:
-            results["cloned"].append(repo_name)
-        else:
-            results["clone_failed"].append((repo_name, stderr.strip()))
+        await clone_repo(repo_name, repo_path)
 
 
 async def process_repos(repos):
     semaphore = Semaphore(MAX_CONCURRENT_TASKS)
     total_repos = len(repos)
+    completed_repos = 0
 
-    async def process_with_semaphore(repo):
+    async def process_with_semaphore(repo_name):
+        nonlocal completed_repos
         async with semaphore:
-            await clone_or_sync_repo(repo)
+            await clone_or_sync_repo(repo_name)
+            completed_repos += 1
+            pbar.update(1)
 
-    tasks = [process_with_semaphore(repo) for repo in repos]
-    for _ in tqdm(
-        asyncio.as_completed(tasks), total=total_repos, desc="Processing repositories"
-    ):
-        await _
+    tasks = [process_with_semaphore(repo["name"]) for repo in repos]
+
+    with tqdm(total=total_repos, desc="Processing repositories") as pbar:
+        await asyncio.gather(*tasks)
 
 
 def print_results():
@@ -163,7 +194,7 @@ def print_results():
 
 async def main():
     try:
-        all_repos = await fetch_repos(ORG_NAME)
+        all_repos = await get_repos(ORG_NAME)
         filtered_repos = [
             repo for repo in all_repos if repo["name"].startswith(REPO_PREFIX)
         ]
@@ -172,8 +203,20 @@ async def main():
         )
         await process_repos(filtered_repos)
         print_results()
+
     except Exception as e:
         logging.error(f"An error occurred: {str(e)}")
+        logging.exception("Exception details:")
+
+    finally:
+        # Print log contents
+        log_contents = log_stream.getvalue().strip()
+        if log_contents:
+            print("\nLog contents:")
+            print("=" * 50)
+            print(log_contents)
+        else:
+            print("\nNo log messages were generated.")
 
 
 if __name__ == "__main__":
