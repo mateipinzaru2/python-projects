@@ -3,6 +3,7 @@ import os
 import json
 import logging
 import io
+import traceback
 from asyncio import Semaphore
 from collections import defaultdict
 from tqdm import tqdm
@@ -26,6 +27,46 @@ logging.basicConfig(
 results = defaultdict(list)
 
 
+class CustomProgressBar:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self, total=None, desc=None):
+        if not hasattr(self, "pbar"):
+            self.pbar = tqdm(total=total, desc=desc, leave=True) if total else None
+        self.last_update = 0
+
+    def start(self, total, desc):
+        self.pbar = tqdm(total=total, desc=desc, leave=True)
+        self.last_update = 0
+
+    def update(self, n=1):
+        if self.pbar:
+            self.pbar.update(n)
+            self.last_update += n
+
+    def write(self, s):
+        if self.pbar:
+            self.pbar.clear()
+            print(s)
+            self.pbar.update(self.last_update)
+        else:
+            print(s)
+
+    def close(self):
+        if self.pbar:
+            self.pbar.close()
+        self.pbar = None
+
+
+# Create a global instance of CustomProgressBar
+progress_bar = CustomProgressBar()
+
+
 async def run_command(
     cmd: str, repo_name: str, cwd=None
 ) -> tuple[int | None, str, str]:
@@ -33,9 +74,13 @@ async def run_command(
         cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=cwd
     )
     stdout, stderr = await process.communicate()
-    if stderr:
-        logging.warning(
-            f"Repository '{repo_name}': Command '{cmd}' produced stderr output: {stderr.decode().strip()}"
+    if stderr and process.returncode != 0:
+        progress_bar.write(
+            f"Error in '{repo_name}': Command '{cmd}' failed: {stderr.decode().strip()}"
+        )
+    elif stderr:
+        progress_bar.write(
+            f"Info from '{repo_name}': Command '{cmd}' output: {stderr.decode().strip()}"
         )
     return process.returncode, stdout.decode(), stderr.decode()
 
@@ -63,17 +108,6 @@ async def clone_repo(repo_name: str, repo_path: str):
         results["clone_failed"].append((repo_name, stderr.strip()))
 
 
-async def fetch_and_merge(repo_name: str, repo_path: str):
-    returncode, _, stderr = await run_command("git fetch", repo_name, cwd=repo_path)
-    if returncode != 0:
-        return False, stderr.strip()
-
-    returncode, _, stderr = await run_command(
-        "git merge --ff-only @{u}", repo_name, cwd=repo_path
-    )
-    return returncode == 0, stderr.strip()
-
-
 async def get_commit_hash(repo_name: str, repo_path: str):
     returncode, commit_hash, _ = await run_command(
         "git rev-parse HEAD", repo_name, cwd=repo_path
@@ -93,12 +127,15 @@ async def get_changed_files(
 
 
 async def update_repo(repo_name: str, repo_path: str):
-    success, error = await fetch_and_merge(repo_name, repo_path)
-    if not success:
-        results["update_failed"].append((repo_name, error))
+    before_commit = await get_commit_hash(repo_name, repo_path)
+
+    returncode, output, error = await run_command(
+        "git pull --ff-only", repo_name, cwd=repo_path
+    )
+    if returncode != 0:
+        results["update_failed"].append((repo_name, error.strip()))
         return
 
-    before_commit = await get_commit_hash(repo_name, repo_path)
     after_commit = await get_commit_hash(repo_name, repo_path)
 
     if before_commit != after_commit:
@@ -125,19 +162,24 @@ async def clone_or_sync_repo(repo_name: str):
 async def process_repos(repos):
     semaphore = Semaphore(MAX_CONCURRENT_TASKS)
     total_repos = len(repos)
-    completed_repos = 0
+    progress_bar.start(total=total_repos, desc="Processing repositories")
 
     async def process_with_semaphore(repo_name):
-        nonlocal completed_repos
         async with semaphore:
-            await clone_or_sync_repo(repo_name)
-            completed_repos += 1
-            pbar.update(1)
+            try:
+                await asyncio.wait_for(clone_or_sync_repo(repo_name), timeout=60)
+            except asyncio.TimeoutError:
+                progress_bar.write(f"Timeout processing repository: {repo_name}")
+                results["update_failed"].append((repo_name, "Timeout"))
+            except Exception as e:
+                progress_bar.write(f"Error processing repository {repo_name}: {str(e)}")
+                results["update_failed"].append((repo_name, str(e)))
+            finally:
+                progress_bar.update(1)
 
     tasks = [process_with_semaphore(repo["name"]) for repo in repos]
-
-    with tqdm(total=total_repos, desc="Processing repositories") as pbar:
-        await asyncio.gather(*tasks)
+    await asyncio.gather(*tasks)
+    progress_bar.close()
 
 
 def print_results():
@@ -198,25 +240,26 @@ async def main():
         filtered_repos = [
             repo for repo in all_repos if repo["name"].startswith(REPO_PREFIX)
         ]
-        print(
+        progress_bar.write(
             f"Processing {len(filtered_repos)} '{REPO_PREFIX}' repositories out of {len(all_repos)} total repositories."
         )
         await process_repos(filtered_repos)
         print_results()
 
     except Exception as e:
-        logging.error(f"An error occurred: {str(e)}")
-        logging.exception("Exception details:")
+        progress_bar.write(f"An error occurred: {str(e)}")
+        progress_bar.write("Exception details:")
+        progress_bar.write(traceback.format_exc())
 
     finally:
         # Print log contents
         log_contents = log_stream.getvalue().strip()
         if log_contents:
-            print("\nLog contents:")
-            print("=" * 50)
-            print(log_contents)
+            progress_bar.write("\nLog contents:")
+            progress_bar.write("=" * 50)
+            progress_bar.write(log_contents)
         else:
-            print("\nNo log messages were generated.")
+            progress_bar.write("\nNo log messages were generated.")
 
 
 if __name__ == "__main__":
