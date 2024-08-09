@@ -22,6 +22,8 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     stream=log_stream,
 )
+logger = logging.getLogger(__name__)
+
 
 # Global dictionary to store results
 results = defaultdict(list)
@@ -50,12 +52,7 @@ class CustomProgressBar:
             self.last_update += n
 
     def write(self, s):
-        if self.pbar:
-            self.pbar.clear()
-            print(s)
-            self.pbar.update(self.last_update)
-        else:
-            print(s)
+        logger.info(s)
 
     def close(self):
         if self.pbar:
@@ -75,11 +72,11 @@ async def run_command(
     )
     stdout, stderr = await process.communicate()
     if stderr and process.returncode != 0:
-        progress_bar.write(
+        logger.error(
             f"Error in '{repo_name}': Command '{cmd}' failed: {stderr.decode().strip()}"
         )
     elif stderr:
-        progress_bar.write(
+        logger.info(
             f"Info from '{repo_name}': Command '{cmd}' output: {stderr.decode().strip()}"
         )
     return process.returncode, stdout.decode(), stderr.decode()
@@ -93,7 +90,7 @@ async def get_repos(ORG_NAME: str) -> list[dict]:
     )
     stdout, stderr = await process.communicate()
     if process.returncode != 0:
-        logging.error(f"Error fetching repos: {stderr.decode().strip()}")
+        logger.error(f"Error fetching repos: {stderr.decode().strip()}")
         return []
     return json.loads(stdout)
 
@@ -169,10 +166,10 @@ async def process_repos(repos):
             try:
                 await asyncio.wait_for(clone_or_sync_repo(repo_name), timeout=60)
             except asyncio.TimeoutError:
-                progress_bar.write(f"Timeout processing repository: {repo_name}")
+                logger.error(f"Timeout processing repository: {repo_name}")
                 results["update_failed"].append((repo_name, "Timeout"))
             except Exception as e:
-                progress_bar.write(f"Error processing repository {repo_name}: {str(e)}")
+                logger.error(f"Error processing repository {repo_name}: {str(e)}")
                 results["update_failed"].append((repo_name, str(e)))
             finally:
                 progress_bar.update(1)
@@ -240,26 +237,25 @@ async def main():
         filtered_repos = [
             repo for repo in all_repos if repo["name"].startswith(REPO_PREFIX)
         ]
-        progress_bar.write(
+        print(
             f"Processing {len(filtered_repos)} '{REPO_PREFIX}' repositories out of {len(all_repos)} total repositories."
         )
         await process_repos(filtered_repos)
         print_results()
 
-    except Exception as e:
-        progress_bar.write(f"An error occurred: {str(e)}")
-        progress_bar.write("Exception details:")
-        progress_bar.write(traceback.format_exc())
-
-    finally:
         # Print log contents
         log_contents = log_stream.getvalue().strip()
         if log_contents:
-            progress_bar.write("\nLog contents:")
-            progress_bar.write("=" * 50)
-            progress_bar.write(log_contents)
+            print("\nLog contents:")
+            print("=" * 50)
+            print(log_contents)
         else:
-            progress_bar.write("\nNo log messages were generated.")
+            print("\nNo log messages were generated.")
+
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}")
+        logger.error("Exception details:")
+        logger.error(traceback.format_exc())
 
 
 if __name__ == "__main__":
