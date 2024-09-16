@@ -15,8 +15,8 @@ mfa_request_config = UserRegistrationDetailsRequestBuilder.UserRegistrationDetai
 
 
 async def get_mfa_pages():
+    mfa_pages = []
     try:
-        mfa_pages = []
         page = (
             await client.reports.authentication_methods.user_registration_details.get(
                 request_configuration=mfa_request_config
@@ -24,7 +24,7 @@ async def get_mfa_pages():
         )
         mfa_pages.append(page)
 
-        while page.odata_next_link:
+        while page and page.odata_next_link:
             page = await client.reports.authentication_methods.user_registration_details.with_url(
                 page.odata_next_link
             ).get(
@@ -33,6 +33,6 @@ async def get_mfa_pages():
             mfa_pages.append(page)
 
     except APIError as e:
-        print(f"Error: {e.error.message}")
+        print(f"Error: {e.message}")
 
     return mfa_pages

@@ -7,18 +7,26 @@ import traceback
 from asyncio import Semaphore
 from collections import defaultdict
 from tqdm import tqdm
+from decouple import config
 
 
-# Configuration
-ORG_NAME = os.getenv("GITHUB_ORG", "")
-REPO_PREFIX = os.getenv("REPO_PREFIX", "")
-MAX_CONCURRENT_TASKS = int(os.getenv("MAX_CONCURRENT_TASKS", 20))
+# Set up environment variables
+ORG_NAME = str(config("ORG_NAME"))
+REPO_PREFIX = str(config("REPO_PREFIX"))
+MAX_CONCURRENT_TASKS = int(config("MAX_CONCURRENT_TASKS"))
+
+if ORG_NAME is None:
+    raise Exception("Please set the ORG_NAME variable")
+if REPO_PREFIX is None:
+    raise Exception("Please set the REPO_PREFIX variable")
+if MAX_CONCURRENT_TASKS is None:
+    raise Exception("Please set the MAX_CONCURRENT_TASKS variable")
 
 
 # Set up logging
 log_stream = io.StringIO()
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.ERROR,
     format="%(asctime)s - %(levelname)s - %(message)s",
     stream=log_stream,
 )

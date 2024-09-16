@@ -15,18 +15,18 @@ user_request_config = UsersRequestBuilder.UsersRequestBuilderGetRequestConfigura
 
 
 async def get_user_pages():
+    user_pages = []
     try:
-        user_pages = []
         page = await client.users.get(request_configuration=user_request_config)
         user_pages.append(page)
 
-        while page.odata_next_link:
+        while page and page.odata_next_link:
             page = await client.users.with_url(page.odata_next_link).get(
                 request_configuration=user_request_config
             )
             user_pages.append(page)
 
     except APIError as e:
-        print(f"Error: {e.error.message}")
+        print(f"Error: {e.message}")
 
     return user_pages
