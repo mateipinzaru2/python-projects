@@ -1,8 +1,8 @@
 from decouple import config
 
-TENANT_ID = config("TENANT_ID")
-CLIENT_ID = config("CLIENT_ID")
-CLIENT_SECRET = config("CLIENT_SECRET")
+TENANT_ID = str(config("TENANT_ID"))
+CLIENT_ID = str(config("CLIENT_ID"))
+CLIENT_SECRET = str(config("CLIENT_SECRET"))
 
 if TENANT_ID is None:
     raise Exception("Please set the TENANT_ID variable")

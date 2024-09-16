@@ -1,5 +1,5 @@
 from azure.identity import ClientSecretCredential
-from msgraph import GraphServiceClient
+from msgraph.graph_service_client import GraphServiceClient
 from config import TENANT_ID, CLIENT_ID, CLIENT_SECRET
 
 credential = ClientSecretCredential(TENANT_ID, CLIENT_ID, CLIENT_SECRET)
