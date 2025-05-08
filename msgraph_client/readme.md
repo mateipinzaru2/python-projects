@@ -24,9 +24,15 @@ It then stores the data in a CSV file.
   ```
 
 ## Setup
+### virtualenv
 - `python3 -m venv .venv && source .venv/bin/activate` to create and activate a virtual environment
 - `pip3 install -r requirements.txt` to install dependencies
 - `python3 src/main.py` to run the program
+
+### uv
+- `uv init --bare` to create and activate a virtual environment
+- `uv add -r requirements.txt` to install dependencies
+- `uv run src/main.py` to run the program
 
 ### Performance Stats
 For ***3015*** users **->** ***1m 10s*** execution time.

@@ -1,0 +1,10 @@
+[project]
+name = "msgraph-client"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "msgraph-sdk>=1.28.0",
+    "python-decouple>=3.8",
+]

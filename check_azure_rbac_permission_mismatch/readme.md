@@ -4,17 +4,15 @@
 
 1. Ensure you have logged in via Azure CLI or configured your environment for Azure authentication.
 2. Create and activate a virtual environment:
-   ```bash
-   python3 -m venv .venv && source .venv/bin/activate
-   ```
-3. Install the required dependencies:
-   ```bash
-   pip3 install -r requirements.txt
-   ```
-4. Run the script:
-   ```bash
-   python3 main.py
-   ```
+### virtualenv
+- `python3 -m venv .venv && source .venv/bin/activate` to create and activate a virtual environment
+- `pip3 install -r requirements.txt` to install dependencies
+- `python3 main.py` to run the program
+
+### uv
+- `uv init --bare` to create and activate a virtual environment
+- `uv add -r requirements.txt` to install dependencies
+- `uv run main.py` to run the program
 
 ## Overview
 
