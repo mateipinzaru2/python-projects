@@ -8,6 +8,7 @@ from asyncio import Semaphore
 from collections import defaultdict
 from tqdm import tqdm
 from decouple import config
+import sys
 
 
 # Set up environment variables
@@ -267,4 +268,17 @@ async def main():
 
 
 if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: python clone_or_pull_repos.py <CLONE_PATH>")
+        print("  <CLONE_PATH>: Directory where repositories will be cloned or updated.")
+        sys.exit(1)
+    CLONE_PATH = sys.argv[1]
+    if not os.path.isdir(CLONE_PATH):
+        try:
+            os.makedirs(CLONE_PATH, exist_ok=True)
+        except Exception as e:
+            print(f"Failed to create directory '{CLONE_PATH}': {e}")
+            sys.exit(1)
+    # Change working directory to the clone path
+    os.chdir(CLONE_PATH)
     asyncio.run(main())

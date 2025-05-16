@@ -14,7 +14,7 @@ This Python script automates the process of cloning and updating GitHub reposito
 
 ## Prerequisites
 
-- **Python 3.10 or higher:** The script uses modern type annotations (e.g., union types with `|`).
+- **Python 3.13 or higher:** The script uses modern type annotations (e.g., union types with `|`).
 - **GitHub CLI (gh):** This must be installed and configured to interact with GitHub repositories.
 - **Git:** Required for cloning and updating repositories.
 - Create a file called `.env` in the project root directory with the following information:
@@ -26,6 +26,12 @@ This Python script automates the process of cloning and updating GitHub reposito
 
 ## Setup
 
+### virtualenv
 - `python3 -m venv .venv && source .venv/bin/activate` to create and activate a virtual environment
 - `pip3 install -r requirements.txt` to install dependencies
-- `python3 clone_or_pull_repos.py` to run the program
+- `python3 clone_or_pull_repos.py <CLONE_PATH>` to run the program
+
+### uv
+- `uv init --bare` to create and activate a virtual environment
+- `uv add -r requirements.txt` to install dependencies
+- `uv run clone_or_pull_repos.py <CLONE_PATH>` to run the program
