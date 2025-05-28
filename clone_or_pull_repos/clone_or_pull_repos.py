@@ -4,12 +4,12 @@ import json
 import logging
 import io
 import traceback
+import sys
 from asyncio import Semaphore
 from collections import defaultdict
-from tqdm import tqdm
 from decouple import config
-import sys
-
+from tqdm import tqdm
+from send2trash import send2trash
 
 # Set up environment variables
 ORG_NAME = str(config("ORG_NAME"))
@@ -184,8 +184,37 @@ async def process_repos(repos):
                 progress_bar.update(1)
 
     tasks = [process_with_semaphore(repo["name"]) for repo in repos]
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*tasks, return_exceptions=True)
     progress_bar.close()
+
+
+async def detect_orphaned_repos(all_repos: list[dict]) -> list[str]:
+    """Detect local repositories that no longer exist in the remote organization."""
+    local_dirs = {
+        d for d in os.listdir() if os.path.isdir(d) and d.startswith(REPO_PREFIX)
+    }
+    remote_names = {repo["name"] for repo in all_repos}
+    return sorted(local_dirs - remote_names)
+
+
+async def handle_orphaned_repos(orphaned: list[str]) -> None:
+    """Handle orphaned repositories by prompting user and moving to trash if confirmed."""
+    if not orphaned:
+        return
+
+    print(f"Found {len(orphaned)} orphaned repositories:")
+    for repo in orphaned:
+        print(f"  - {repo}")
+    print()
+
+    ans = input("Move all orphaned repositories to Trash? [y/N]: ")
+    if ans.lower() == "y":
+        for repo_name in orphaned:
+            try:
+                send2trash(repo_name)
+                results["deleted"].append(repo_name)
+            except Exception as e:
+                results["delete_failed"].append((repo_name, str(e)))
 
 
 def print_results():
@@ -228,6 +257,16 @@ def print_results():
         for repo, error in results["clone_failed"]:
             print(f"  - {repo}: {error}")
 
+    if results["deleted"]:
+        print("\nDeleted Repositories:")
+        for repo in results["deleted"]:
+            print(f"  - {repo}")
+
+    if results["delete_failed"]:
+        print("\nFailed Deletions:")
+        for repo, error in results["delete_failed"]:
+            print(f"  - {repo}: {error}")
+
     print("\n" + "=" * 50)
     print("Summary Counts")
     print("=" * 50)
@@ -237,15 +276,24 @@ def print_results():
     print(f"Already Up-to-Date: {len(results['up_to_date'])}")
     print(f"Failed Updates: {len(results['update_failed'])}")
     print(f"Failed Clones: {len(results['clone_failed'])}")
+    print(f"Deleted: {len(results['deleted'])}")
+    print(f"Failed Deletions: {len(results['delete_failed'])}")
     print("=" * 50)
 
 
 async def main():
     try:
         all_repos = await get_repos(ORG_NAME)
+
+        # Handle orphaned repositories
+        orphaned = await detect_orphaned_repos(all_repos)
+        await handle_orphaned_repos(orphaned)
+
+        # Filter repos by prefix
         filtered_repos = [
             repo for repo in all_repos if repo["name"].startswith(REPO_PREFIX)
         ]
+
         print(
             f"Processing {len(filtered_repos)} '{REPO_PREFIX}' repositories out of {len(all_repos)} total repositories."
         )
